@@ -1,0 +1,27 @@
+name: Release SBOM and Checksums
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  sbom-and-checksums:
+    name: Generate CycloneDX SBOM and SHA256SUMS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install CycloneDX CLI
+        run: |
+          curl -sSfL https://github.com/CycloneDX/cyclonedx-cli/releases/download/v0.27.1/cyclonedx-linux-x64 -o /tmp/cyclonedx
+          chmod +x /tmp/cyclonedx
+
+      - name: Generate Cargo SBOM & SHA256SUMS manifest
+        run: |
+          mkdir -p release-artifacts
+          /tmp/cyclonedx convert --input-file src-tauri/Cargo.toml --input-format cargo --output-file release-artifacts/sbom-cyclonedx.json --output-format json
+          (cd release-artifacts && sha256sum sbom-cyclonedx.json > SHA256SUMS)
