@@ -1,0 +1,18 @@
+Apache License
+Version 2.0, January 2004
+http://www.apache.org/licenses/
+
+[Standard Apache 2.0 Terms Apply]
+
+================================================================================
+CRITICAL HARDWARE & DATA LOSS DISCLAIMER (LOW-LEVEL FLASHING & FORENSICS)
+================================================================================
+OmniMobile Toolkit interacts directly with low-level USB interfaces, Android 
+Bootloaders (Fastboot/EDL), and Apple lockdown/DFU protocols. Improper usage, 
+interrupted transfers, or incompatible firmware/partition images can permanently 
+brick devices or cause irreversible data loss. 
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+IMPLIED. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY 
+BRICKED HARDWARE, VOIDED WARRANTIES, OR DATA LOSS ARISING FROM THE USE OF THIS 
+TOOLKIT.

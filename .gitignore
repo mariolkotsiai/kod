@@ -1,0 +1,37 @@
+# Build & Dependencies
+/target/
+/src-tauri/target/
+/node_modules/
+/dist/
+*.log
+
+# Environment & Secrets
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+secrets/
+
+# Mobile Forensics, Dumps & Pairing Caches (Zero-Trust PII Protection)
+*.ab
+*.img
+*.bin
+*.raw
+*.tar.gz.enc
+/dumps/
+/backups/
+/temp_extracted/
+adbkey
+adbkey.pub
+*.plist
+
+# OS & IDE
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
