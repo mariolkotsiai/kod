@@ -1,7 +1,15 @@
+use crate::core::exec::{exec, exec_raw, DEFAULT_TIMEOUT};
 use crate::core::pal::PalError;
-use tokio::process::Command;
 
-/// Validates Apple UDID format (hex/UUID-style characters only) to prevent argument/path abuse.
+/// Only these libimobiledevice tools may be launched through [`run_imobile_cmd`].
+const ALLOWED_PROGRAMS: [&str; 4] = [
+    "ideviceinfo",
+    "idevicediagnostics",
+    "idevicebackup2",
+    "idevicepair",
+];
+
+/// Validates Apple UDID format (alphanumeric and dash only) to prevent argument/path abuse.
 pub fn validate_udid(udid: &str) -> Result<&str, PalError> {
     if udid.is_empty() || udid.len() > 64 {
         return Err(PalError::Transport("Invalid or empty Apple UDID".to_string()));
@@ -17,42 +25,40 @@ pub fn validate_udid(udid: &str) -> Result<&str, PalError> {
     Ok(udid)
 }
 
-/// Runs a libimobiledevice CLI tool with discrete arguments (no shell interpolation).
+/// Runs an allowlisted libimobiledevice CLI tool with discrete arguments (no shell) and a timeout.
 pub async fn run_imobile_cmd(program: &str, udid: &str, args: &[&str]) -> Result<String, PalError> {
+    if !ALLOWED_PROGRAMS.contains(&program) {
+        return Err(PalError::Transport(format!(
+            "Program '{program}' is not allowlisted"
+        )));
+    }
     let clean_udid = validate_udid(udid)?;
 
-    let mut cmd = Command::new(program);
-    cmd.arg("-u").arg(clean_udid).args(args);
+    let mut full: Vec<&str> = Vec::with_capacity(args.len() + 2);
+    full.push("-u");
+    full.push(clean_udid);
+    full.extend_from_slice(args);
 
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| PalError::Transport(format!("Failed executing {program}: {e}")))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(PalError::Transport(format!("{program} failed: {stderr}")));
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    exec(program, &full, DEFAULT_TIMEOUT).await
 }
 
 /// Verifies lockdownd pairing record & SSL certificate trust prior to transferring data.
 pub async fn verify_lockdownd_pairing(udid: &str) -> Result<(), PalError> {
     let clean_udid = validate_udid(udid)?;
 
-    let output = Command::new("idevicepair")
-        .arg("-u")
-        .arg(clean_udid)
-        .arg("validate")
-        .output()
-        .await
-        .map_err(|e| PalError::Transport(format!("Failed running idevicepair validate: {e}")))?;
+    // exec_raw: a timeout / missing binary stays a Transport error; only a real
+    // "validate" failure is reported as an untrusted peer.
+    let out = exec_raw(
+        "idevicepair",
+        &["-u", clean_udid, "validate"],
+        DEFAULT_TIMEOUT,
+    )
+    .await?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if !out.success {
+        tracing::debug!(stderr = %out.stderr, "idevicepair validate failed");
         return Err(PalError::UntrustedPeer(format!(
-            "lockdownd pairing/SSL validation failed for UDID {clean_udid}: {stderr}"
+            "lockdownd pairing/SSL validation failed for UDID {clean_udid}"
         )));
     }
 

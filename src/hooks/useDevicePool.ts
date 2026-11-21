@@ -1,6 +1,24 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { BackupMode, BackupResult, DiagnosticsReport, SlotStatus } from "../types/toolkit";
+import type {
+  BackupMode,
+  BackupResult,
+  DiagnosticsReport,
+  RestoreMode,
+  RestoreResult,
+  SlotStatus,
+} from "../types/toolkit";
+
+/** The backend rejects with a plain string; fall back gracefully for any other shape. */
+function toMessage(err: unknown): string {
+  if (typeof err === "string") return err;
+  if (err instanceof Error) return err.message;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return "Unknown error";
+  }
+}
 
 export function useDevicePool() {
   const [slots, setSlots] = useState<SlotStatus[]>([]);
@@ -13,7 +31,7 @@ export function useDevicePool() {
       setSlots(data);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(toMessage(err));
     }
   }, []);
 
@@ -28,7 +46,7 @@ export function useDevicePool() {
       setError(null);
       return report;
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(toMessage(err));
       return null;
     } finally {
       setBusy(false);
@@ -43,7 +61,7 @@ export function useDevicePool() {
         setError(null);
         return res;
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        setError(toMessage(err));
         return null;
       } finally {
         setBusy(false);
@@ -52,5 +70,34 @@ export function useDevicePool() {
     []
   );
 
-  return { slots, error, busy, refreshSlots, runDiagnostics, runBackup };
+  const runRestore = useCallback(
+    async (
+      slotIdx: 0 | 1,
+      backupPath: string,
+      mode: RestoreMode,
+      passphrase: string,
+      expectedSha256?: string
+    ): Promise<RestoreResult | null> => {
+      setBusy(true);
+      try {
+        const res = await invoke<RestoreResult>("run_restore", {
+          slotIdx,
+          backupPath,
+          mode,
+          passphrase,
+          expectedSha256: expectedSha256 ?? null,
+        });
+        setError(null);
+        return res;
+      } catch (err) {
+        setError(toMessage(err));
+        return null;
+      } finally {
+        setBusy(false);
+      }
+    },
+    []
+  );
+
+  return { slots, error, busy, refreshSlots, runDiagnostics, runBackup, runRestore };
 }

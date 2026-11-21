@@ -1,18 +1,35 @@
 pub mod executor;
 
-use crate::core::crypto::{compute_sha256, decrypt_payload, encrypt_payload, EncryptedArchive};
+use crate::core::archive_io::{read_and_verify_archive, sanitize_component, write_archive_atomic};
+use crate::core::crypto::{compute_sha256, encrypt_payload, ArchiveMeta};
 use crate::core::pal::{
-    BackupMode, BackupResult, BatteryTelemetry, DeviceSlot, DiagnosticsReport,
-    DigitizerMatrixResult, MobileDevice, PalError, Platform, RestoreMode, RestoreResult,
-    SensorCheckResult, StorageBreakdown, ThermalReading,
+    find_value, BackupMode, BackupResult, BatteryTelemetry, DeviceSlot, DiagnosticsReport,
+    MobileDevice, PalError, Platform, RestoreMode, RestoreResult, StorageBreakdown,
+    ThermalReading,
 };
 use async_trait::async_trait;
-use executor::{run_adb, run_fastboot, verify_adb_host_trust};
-use std::path::PathBuf;
+use executor::{run_adb, run_adb_timeout, verify_adb_host_trust};
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 use tokio::fs;
+use zeroize::Zeroizing;
 
 const COMPANION_PKG: &str = "com.omnimobile.agent";
-const COMPANION_ACTIVITY: &str = "com.omnimobile.agent/.MainActivity";
+const INSTALL_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// SHA-256 (lowercase hex) of the release-built companion APK, pinned at build time.
+/// `None` = sideloading is refused (secure by default). An `Option`, not an empty string, so the
+/// "not configured" state can never be mistaken for a digest (and clippy does not flag it).
+pub const EXPECTED_APK_SHA256: Option<&str> = None;
+
+/// Parses `df -k <mount>` output into `(total_kb, used_kb)` (second line, columns 2 and 3).
+pub fn parse_df_kb(raw: &str) -> Option<(u64, u64)> {
+    let line = raw.lines().filter(|l| !l.trim().is_empty()).nth(1)?;
+    let fields: Vec<&str> = line.split_whitespace().collect();
+    let total_kb = fields.get(1)?.parse::<u64>().ok()?;
+    let used_kb = fields.get(2)?.parse::<u64>().ok()?;
+    Some((total_kb, used_kb))
+}
 
 pub struct AndroidDevice {
     serial: String,
@@ -29,62 +46,107 @@ impl AndroidDevice {
         }
     }
 
-    /// Sideloads ephemeral stub APK if configured, launches diagnostic activity, and runs check.
-    async fn run_ephemeral_companion_check(&self) -> Result<DigitizerMatrixResult, PalError> {
+    /// Sideloads the companion APK after verifying its SHA-256 against [`EXPECTED_APK_SHA256`].
+    /// No `-g`: the stub needs no runtime permissions, so none are granted.
+    pub async fn install_companion(&self) -> Result<(), PalError> {
         verify_adb_host_trust(&self.serial).await?;
 
-        if let Some(ref apk) = self.apk_path {
-            let apk_str = apk.to_string_lossy().to_string();
-            let _ = run_adb(&self.serial, &["install", "-r", "-g", &apk_str]).await?;
+        let apk = self.apk_path.as_ref().ok_or_else(|| {
+            PalError::UnsupportedState("No companion APK configured".to_string())
+        })?;
+        let expected_sha256 = EXPECTED_APK_SHA256.ok_or_else(|| {
+            PalError::UntrustedPeer(
+                "No pinned companion APK digest configured; refusing to sideload".to_string(),
+            )
+        })?;
+
+        // Canonical absolute path: also guarantees the argument cannot start with '-'.
+        let apk = fs::canonicalize(apk)
+            .await
+            .map_err(|e| PalError::Transport(format!("Companion APK path: {e}")))?;
+        let bytes = fs::read(&apk)
+            .await
+            .map_err(|e| PalError::Transport(format!("Companion APK read: {e}")))?;
+        if !compute_sha256(&bytes).eq_ignore_ascii_case(expected_sha256) {
+            return Err(PalError::UntrustedPeer(
+                "Companion APK digest mismatch".to_string(),
+            ));
         }
 
-        let launch_res = run_adb(
-            &self.serial,
-            &["shell", "am", "start", "-n", COMPANION_ACTIVITY],
-        )
-        .await;
-
-        // Always attempt self-destruction uninstall regardless of diagnostic outcome.
-        let _ = self.uninstall_companion().await;
-        let _ = launch_res?;
-
-        Ok(DigitizerMatrixResult {
-            rows: 24,
-            cols: 12,
-            dead_zones_detected: 0,
-            passed: true,
-        })
+        let apk_str = apk.to_string_lossy().to_string();
+        // adb on Windows does not handle the \\?\ verbatim prefix produced by canonicalize.
+        let apk_arg = apk_str.strip_prefix(r"\\?\").unwrap_or(&apk_str);
+        run_adb_timeout(&self.serial, &["install", "-r", apk_arg], INSTALL_TIMEOUT).await?;
+        Ok(())
     }
 
-    /// Enforces immediate removal of the ephemeral companion app upon session end or error.
+    /// Removes the companion app (also use this at startup to clean up after a crash).
     pub async fn uninstall_companion(&self) -> Result<(), PalError> {
         let _ = run_adb(&self.serial, &["shell", "am", "force-stop", COMPANION_PKG]).await;
-        let _ = run_adb(&self.serial, &["uninstall", COMPANION_PKG]).await?;
+        run_adb(&self.serial, &["uninstall", COMPANION_PKG]).await?;
         Ok(())
+    }
+
+    /// Best-effort read of a numeric sysfs node; `None` when unreadable or not numeric.
+    async fn read_sysfs_u64(&self, path: &str) -> Option<u64> {
+        run_adb(&self.serial, &["shell", "cat", path])
+            .await
+            .ok()?
+            .trim()
+            .parse::<u64>()
+            .ok()
     }
 
     async fn read_battery_telemetry(&self) -> Result<BatteryTelemetry, PalError> {
         let raw = run_adb(&self.serial, &["shell", "dumpsys", "battery"]).await?;
-        let mut health_percent: u8 = 100;
-        let mut temp_tenths: i32 = 300;
 
-        for line in raw.lines() {
-            let trimmed = line.trim();
-            if let Some(val) = trimmed.strip_prefix("level:") {
-                if let Ok(parsed) = val.trim().parse::<u8>() {
-                    health_percent = parsed.min(100);
-                }
-            } else if let Some(val) = trimmed.strip_prefix("temperature:") {
-                if let Ok(parsed) = val.trim().parse::<i32>() {
-                    temp_tenths = parsed;
-                }
+        let level_percent = find_value(&raw, "level")
+            .and_then(|v| v.parse::<u8>().ok())
+            .map(|v| v.min(100));
+        let temperature_celsius = find_value(&raw, "temperature")
+            .and_then(|v| v.parse::<i32>().ok())
+            .map(|tenths| tenths as f32 / 10.0);
+
+        let cycle_count = self
+            .read_sysfs_u64("/sys/class/power_supply/battery/cycle_count")
+            .await
+            .and_then(|v| u32::try_from(v).ok());
+        let charge_full = self
+            .read_sysfs_u64("/sys/class/power_supply/battery/charge_full")
+            .await;
+        let charge_design = self
+            .read_sysfs_u64("/sys/class/power_supply/battery/charge_full_design")
+            .await;
+        let health_percent = match (charge_full, charge_design) {
+            (Some(full), Some(design)) if design > 0 => {
+                u8::try_from((full.saturating_mul(100) / design).min(100)).ok()
             }
-        }
+            _ => None,
+        };
 
         Ok(BatteryTelemetry {
+            level_percent,
             health_percent,
-            cycle_count: 0,
-            temperature_celsius: (temp_tenths as f32) / 10.0,
+            cycle_count,
+            temperature_celsius,
+        })
+    }
+
+    async fn read_storage(&self) -> Option<StorageBreakdown> {
+        let data = run_adb(&self.serial, &["shell", "df", "-k", "/data"])
+            .await
+            .ok()?;
+        let (total_kb, used_kb) = parse_df_kb(&data)?;
+        let system_bytes = run_adb(&self.serial, &["shell", "df", "-k", "/system"])
+            .await
+            .ok()
+            .and_then(|raw| parse_df_kb(&raw))
+            .map(|(system_total_kb, _)| system_total_kb.saturating_mul(1024));
+
+        Some(StorageBreakdown {
+            total_bytes: total_kb.saturating_mul(1024),
+            used_bytes: used_kb.saturating_mul(1024),
+            system_bytes,
         })
     }
 }
@@ -105,69 +167,79 @@ impl MobileDevice for AndroidDevice {
 
     async fn get_diagnostics(&self) -> Result<DiagnosticsReport, PalError> {
         verify_adb_host_trust(&self.serial).await?;
-        let battery = self.read_battery_telemetry().await?;
-        let digitizer = self.run_ephemeral_companion_check().await?;
 
+        let battery = self.read_battery_telemetry().await?;
+        let storage = self.read_storage().await;
+        let thermals = match battery.temperature_celsius {
+            Some(celsius) => vec![ThermalReading {
+                zone: "battery".to_string(),
+                celsius,
+            }],
+            None => Vec::new(),
+        };
+
+        // Sensors and the digitizer matrix are not probed yet: report "not measured"
+        // instead of fabricated PASS results.
         Ok(DiagnosticsReport {
             device_id: self.serial.clone(),
             slot: self.slot,
             platform: Platform::Android,
-            thermals: vec![ThermalReading {
-                zone: "soc-thermal".to_string(),
-                celsius: battery.temperature_celsius + 4.5,
-            }],
+            thermals,
             battery,
-            storage: StorageBreakdown {
-                total_bytes: 128_000_000_000,
-                used_bytes: 64_000_000_000,
-                system_bytes: 16_000_000_000,
-            },
-            sensors: vec![SensorCheckResult {
-                sensor_name: "accelerometer/gyro".to_string(),
-                operational: true,
-                detail: "ADB HAL active".to_string(),
-            }],
-            digitizer,
+            storage,
+            sensors: Vec::new(),
+            digitizer: None,
         })
     }
 
-    async fn backup(&self, mode: BackupMode, passphrase: &str) -> Result<BackupResult, PalError> {
+    async fn backup(
+        &self,
+        mode: BackupMode,
+        passphrase: &str,
+        out_dir: &Path,
+    ) -> Result<BackupResult, PalError> {
         verify_adb_host_trust(&self.serial).await?;
 
-        let raw_payload = match mode {
-            BackupMode::Selective => {
-                let contacts = run_adb(&self.serial, &["shell", "content", "query", "--uri", "content://contacts/phones"]).await?;
-                contacts.into_bytes()
+        let mode_label = mode.as_str();
+        let raw_payload = Zeroizing::new(match mode {
+            BackupMode::Selective => run_adb(
+                &self.serial,
+                &[
+                    "shell",
+                    "content",
+                    "query",
+                    "--uri",
+                    "content://com.android.contacts/data/phones",
+                ],
+            )
+            .await?
+            .into_bytes(),
+            BackupMode::FullData | BackupMode::FullImage => {
+                return Err(PalError::UnsupportedState(format!(
+                    "Backup mode '{mode_label}' is not implemented for Android"
+                )));
             }
-            BackupMode::FullData => {
-                let pkgs = run_adb(&self.serial, &["shell", "pm", "list", "packages", "-3"]).await?;
-                pkgs.into_bytes()
-            }
-            BackupMode::FullImage => {
-                let vars = run_fastboot(&self.serial, &["getvar", "all"]).await.unwrap_or_else(|_| "fastboot-var-unavailable".to_string());
-                vars.into_bytes()
-            }
-        };
+        });
 
-        let encrypted_archive = encrypt_payload(&raw_payload, passphrase)?;
-        let serialized = serde_json::to_vec_pretty(&encrypted_archive)
+        let meta = ArchiveMeta {
+            device_id: &self.serial,
+            platform: Platform::Android.as_str(),
+            mode: mode_label,
+        };
+        let archive = encrypt_payload(&raw_payload, passphrase, &meta)?;
+        let serialized = serde_json::to_vec_pretty(&archive)
             .map_err(|e| PalError::Transport(format!("Archive serialization failed: {e}")))?;
 
-        let out_dir = PathBuf::from("backups");
-        fs::create_dir_all(&out_dir)
-            .await
-            .map_err(|e| PalError::Transport(format!("Failed creating backup dir: {e}")))?;
+        let stem = format!(
+            "android_{}_slot{}",
+            sanitize_component(&self.serial),
+            self.slot as u8
+        );
+        let archive_path = write_archive_atomic(out_dir, &stem, &serialized).await?;
 
-        let filename = format!("android_{}_{}.ombackup", self.serial, self.slot as u8);
-        let archive_path = out_dir.join(filename);
-        fs::write(&archive_path, &serialized)
-            .await
-            .map_err(|e| PalError::Transport(format!("Failed writing backup archive: {e}")))?;
-
-        let sha256_hex = compute_sha256(&serialized);
         Ok(BackupResult {
             archive_path,
-            sha256_hex,
+            sha256_hex: compute_sha256(&serialized),
             size_bytes: serialized.len() as u64,
             encrypted: true,
         })
@@ -178,24 +250,23 @@ impl MobileDevice for AndroidDevice {
         backup_path: PathBuf,
         _mode: RestoreMode,
         passphrase: &str,
+        expected_sha256: Option<&str>,
     ) -> Result<RestoreResult, PalError> {
         verify_adb_host_trust(&self.serial).await?;
 
-        let raw_file = fs::read(&backup_path)
-            .await
-            .map_err(|e| PalError::Transport(format!("Failed reading backup file: {e}")))?;
+        // Verifies SHA-256 (if provided), platform and AEAD authentication; the decrypted
+        // buffer is zeroized when it goes out of scope.
+        let _verified = read_and_verify_archive(
+            &backup_path,
+            Platform::Android.as_str(),
+            passphrase,
+            expected_sha256,
+        )
+        .await?;
 
-        let verified_sha256 = compute_sha256(&raw_file);
-        let archive: EncryptedArchive = serde_json::from_slice(&raw_file)
-            .map_err(|e| PalError::Transport(format!("Invalid archive JSON: {e}")))?;
-
-        let mut decrypted = decrypt_payload(&archive, passphrase)?;
-        // Explicitly wipe decrypted buffer once verified.
-        decrypted.clear();
-
-        Ok(RestoreResult {
-            verified_sha256,
-            restored_items: 1,
-        })
+        Err(PalError::UnsupportedState(
+            "Restore to the device is not implemented yet; archive integrity and passphrase were verified"
+                .to_string(),
+        ))
     }
 }

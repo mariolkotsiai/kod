@@ -7,6 +7,16 @@ license = "Apache-2.0"
 edition = "2021"
 rust-version = "1.78"
 
+# All logic lives in the library (tests/ link against it). The binary has a different name on
+# purpose: identical lib/bin names collide on Windows (rust-lang/cargo#8519).
+[lib]
+name = "omnimobile_toolkit"
+path = "src/lib.rs"
+
+[[bin]]
+name = "omnimobile-toolkit-app"
+path = "src/main.rs"
+
 [build-dependencies]
 tauri-build = { version = "2.0", features = [] }
 
@@ -20,10 +30,15 @@ serde_json = "1.0"
 tokio = { version = "1.38", features = ["full"] }
 async-trait = "0.1"
 
-# Low-Level USB & System I/O
-rusb = "0.9"
-uuid = { version = "1.8", features = ["v4", "serde"] }
+# Low-Level USB & System I/O (vendored: builds libusb from source, no vcpkg/pkg-config on Windows)
+rusb = { version = "0.9", features = ["vendored"] }
 chrono = { version = "0.4", features = ["serde"] }
+
+# CLI & Standalone TUI (--tui): used by src/main.rs and src/tui/
+clap = { version = "4.5", features = ["derive"] }
+ratatui = "0.27"
+crossterm = "0.27"
+
 
 # Zero-Trust Cryptography & Memory Safety
 aes-gcm = "0.10"
@@ -33,19 +48,24 @@ rand = "0.8"
 zeroize = { version = "1.7", features = ["derive"] }
 hex = "0.4"
 
-# CLI & Standalone TUI (--tui)
-clap = { version = "4.5", features = ["derive"] }
-ratatui = "0.27"
-crossterm = "0.27"
-
-# Structured Error Handling & Logging (Zero unwrap() policy)
+# Structured Error Handling & Logging (Zero unwrap() policy in src/)
 thiserror = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+[dev-dependencies]
+tempfile = "3"
+
+# Argon2 is unusably slow at opt-level 0; keep debug builds and `cargo test` fast.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3
+
+# NOTE: `panic = "abort"` was removed on purpose. Aborting skips destructors, so ZeroizeOnDrop
+# would not run on a panic path, and any panic inside a command would kill the whole app.
 [profile.release]
 opt-level = 3
 lto = true
 codegen-units = 1
 strip = true
-panic = "abort"
