@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # Pinned tool version. Verify/bump on crates.io; never install an unpinned latest in CI.
+  CARGO_AUDIT_VERSION: "0.22.2"
+
 jobs:
   secret-scanning:
     name: Secret Scanning (Gitleaks & TruffleHog)
@@ -20,6 +24,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Run Gitleaks
         # Pinned commit SHA for gitleaks/gitleaks-action v2.3.8
@@ -27,7 +32,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run TruffleHog OSS
+      # Pull requests: scan only what the PR adds.
+      - name: Run TruffleHog OSS (pull request diff)
+        if: github.event_name == 'pull_request'
         # Pinned commit SHA for trufflesecurity/trufflehog v3.82.6
         uses: trufflesecurity/trufflehog@3804e4f429be5753d7b3879893da7f2d0f6a0f75
         with:
@@ -36,17 +43,33 @@ jobs:
           head: HEAD
           extra_args: --only-verified
 
+      # Pushes to main: base == head would make the diff scan fail, so scan the full history.
+      - name: Run TruffleHog OSS (full history)
+        if: github.event_name != 'pull_request'
+        uses: trufflesecurity/trufflehog@3804e4f429be5753d7b3879893da7f2d0f6a0f75
+        with:
+          path: ./
+          extra_args: --only-verified
+
   dependency-audit:
     name: Cargo & NPM Dependency Audit
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      # cargo audit and npm audit need committed lockfiles: src-tauri/Cargo.lock and package-lock.json.
+      - name: Require lockfiles
+        run: |
+          test -f src-tauri/Cargo.lock || { echo "src-tauri/Cargo.lock is missing"; exit 1; }
+          test -f package-lock.json || { echo "package-lock.json is missing"; exit 1; }
 
       - name: Install Rust toolchain & cargo-audit
         run: |
           rustup toolchain install stable --profile minimal
-          cargo install cargo-audit --locked
+          cargo install cargo-audit --locked --version "${CARGO_AUDIT_VERSION}"
 
       - name: Run cargo audit
         working-directory: src-tauri

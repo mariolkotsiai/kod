@@ -7,21 +7,48 @@ on:
 permissions:
   contents: read
 
+env:
+  # Pinned tool version. Verify on crates.io before the first release; bump deliberately.
+  CARGO_CYCLONEDX_VERSION: "0.5.9"
+
 jobs:
   sbom-and-checksums:
     name: Generate CycloneDX SBOM and SHA256SUMS
     runs-on: ubuntu-latest
+    permissions:
+      # Needed only to attach the generated files to the release.
+      contents: write
     steps:
       - name: Checkout repository
+        # Pinned commit SHA for actions/checkout v4.2.2
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
 
-      - name: Install CycloneDX CLI
+      # Replaces the unverified `curl | chmod +x` of cyclonedx-cli: cyclonedx-cli cannot read
+      # Cargo manifests, cargo-cyclonedx can. cargo downloads crates with checksum verification (--locked).
+      - name: Install cargo-cyclonedx
         run: |
-          curl -sSfL https://github.com/CycloneDX/cyclonedx-cli/releases/download/v0.27.1/cyclonedx-linux-x64 -o /tmp/cyclonedx
-          chmod +x /tmp/cyclonedx
+          rustup toolchain install stable --profile minimal
+          cargo install cargo-cyclonedx --locked --version "${CARGO_CYCLONEDX_VERSION}"
 
-      - name: Generate Cargo SBOM & SHA256SUMS manifest
+      - name: Generate Cargo SBOM
         run: |
+          # Verify the flags once with `cargo cyclonedx --help` if the pinned version is changed.
+          cargo cyclonedx --manifest-path src-tauri/Cargo.toml --format json --override-filename sbom-cyclonedx
+          test -f src-tauri/sbom-cyclonedx.json
           mkdir -p release-artifacts
-          /tmp/cyclonedx convert --input-file src-tauri/Cargo.toml --input-format cargo --output-file release-artifacts/sbom-cyclonedx.json --output-format json
-          (cd release-artifacts && sha256sum sbom-cyclonedx.json > SHA256SUMS)
+          mv src-tauri/sbom-cyclonedx.json release-artifacts/sbom-cyclonedx.json
+
+      # Installer artifacts (Phase 2) must be copied into release-artifacts/ before this step so that
+      # they are covered by SHA256SUMS as well.
+      - name: Compute SHA256SUMS
+        working-directory: release-artifacts
+        run: sha256sum sbom-cyclonedx.json > SHA256SUMS
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Passed through the environment, never interpolated into the script (injection-safe).
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" release-artifacts/sbom-cyclonedx.json release-artifacts/SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
