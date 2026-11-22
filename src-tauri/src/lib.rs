@@ -1,8 +1,8 @@
-pub mod core;      // core/mod.rs: pub mod crypto; pub mod pal; pub mod device_pool; pub mod exec; pub mod archive_io;
-pub mod protocols; // protocols/mod.rs: pub mod android; pub mod apple;
 pub mod companion; // companion/mod.rs: pub mod apple_relay;
-pub mod ipc;       // Tauri commands + AppState (src/ipc/mod.rs)
-pub mod tui;       // standalone terminal UI, --tui (src/tui/mod.rs)
+pub mod core; // core/mod.rs: pub mod crypto; pub mod pal; pub mod device_pool; pub mod exec; pub mod archive_io;
+pub mod ipc; // Tauri commands + AppState (src/ipc/mod.rs)
+pub mod protocols; // protocols/mod.rs: pub mod android; pub mod apple;
+pub mod tui; // standalone terminal UI, --tui (src/tui/mod.rs)
 
 use crate::core::device_pool::DevicePool;
 use crate::ipc::AppState;

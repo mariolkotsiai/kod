@@ -16,7 +16,7 @@ pub fn render_dashboard(frame: &mut Frame<'_>, slots: &[SlotStatus]) {
             Constraint::Min(8),
             Constraint::Length(3),
         ])
-        .split(frame.size());   
+        .split(frame.size());
 
     let header = Paragraph::new(Line::from(vec![
         Span::styled(

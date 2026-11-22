@@ -53,7 +53,11 @@ pub async fn run_diagnostics(
     slot_idx: u8,
 ) -> Result<DiagnosticsReport, String> {
     let slot = map_slot(slot_idx)?;
-    let device = state.pool.get_device(slot).await.map_err(|e| e.to_string())?;
+    let device = state
+        .pool
+        .get_device(slot)
+        .await
+        .map_err(|e| e.to_string())?;
     // One operation at a time per slot; the guard is held until the function returns.
     let _guard = state.pool.lock_slot(slot).await;
     device.get_diagnostics().await.map_err(|e| e.to_string())
@@ -70,7 +74,11 @@ pub async fn run_backup(
     // Wipe our copy of the passphrase when this command returns.
     let passphrase = Zeroizing::new(passphrase);
     let slot = map_slot(slot_idx)?;
-    let device = state.pool.get_device(slot).await.map_err(|e| e.to_string())?;
+    let device = state
+        .pool
+        .get_device(slot)
+        .await
+        .map_err(|e| e.to_string())?;
     let out_dir = backups_dir(&app)?;
     let _guard = state.pool.lock_slot(slot).await;
     device
@@ -91,7 +99,11 @@ pub async fn run_restore(
 ) -> Result<RestoreResult, String> {
     let passphrase = Zeroizing::new(passphrase);
     let slot = map_slot(slot_idx)?;
-    let device = state.pool.get_device(slot).await.map_err(|e| e.to_string())?;
+    let device = state
+        .pool
+        .get_device(slot)
+        .await
+        .map_err(|e| e.to_string())?;
 
     // Confine the path to the backups dir, require the .ombackup extension, cap the size.
     // The webview can no longer make the backend read arbitrary files.
@@ -100,7 +112,12 @@ pub async fn run_restore(
         .map_err(|e| e.to_string())?;
     let _guard = state.pool.lock_slot(slot).await;
     device
-        .restore(safe_path, mode, passphrase.as_str(), expected_sha256.as_deref())
+        .restore(
+            safe_path,
+            mode,
+            passphrase.as_str(),
+            expected_sha256.as_deref(),
+        )
         .await
         .map_err(|e| e.to_string())
 }
