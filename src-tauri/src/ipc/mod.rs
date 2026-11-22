@@ -121,3 +121,18 @@ pub async fn run_restore(
         .await
         .map_err(|e| e.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `map_slot` είναι το μόνο φίλτρο ανάμεσα στο index του webview και το pool.
+    #[test]
+    fn map_slot_accepts_only_zero_and_one() {
+        assert_eq!(map_slot(0), Ok(DeviceSlot::Slot0));
+        assert_eq!(map_slot(1), Ok(DeviceSlot::Slot1));
+        for bad in [2u8, 3, 127, 255] {
+            assert!(map_slot(bad).is_err(), "slot index {bad} must be rejected");
+        }
+    }
+}
