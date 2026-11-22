@@ -43,3 +43,6 @@ Thumbs.db
 .vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json
+
+# Generated locally by cargo-cyclonedx; the release workflow produces the official one
+src-tauri/sbom-cyclonedx.json
