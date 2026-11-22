@@ -30,8 +30,14 @@ pub fn sanitize_component(input: &str) -> String {
 
 /// Writes `bytes` to `<dir>/<stem>_<UTC timestamp>.ombackup` atomically:
 /// temp file (owner-only on Unix) -> fsync -> rename. An existing backup is never overwritten.
-pub async fn write_archive_atomic(dir: &Path, stem: &str, bytes: &[u8]) -> Result<PathBuf, PalError> {
-    fs::create_dir_all(dir).await.map_err(io("create backup dir"))?;
+pub async fn write_archive_atomic(
+    dir: &Path,
+    stem: &str,
+    bytes: &[u8],
+) -> Result<PathBuf, PalError> {
+    fs::create_dir_all(dir)
+        .await
+        .map_err(io("create backup dir"))?;
 
     let ts = chrono::Utc::now().format("%Y%m%dT%H%M%S%3fZ");
     let final_path = dir.join(format!("{stem}_{ts}.ombackup"));
@@ -50,7 +56,10 @@ pub async fn write_archive_atomic(dir: &Path, stem: &str, bytes: &[u8]) -> Resul
     opts.write(true).create_new(true);
     #[cfg(unix)]
     opts.mode(0o600);
-    let mut file = opts.open(&tmp_path).await.map_err(io("create temp archive"))?;
+    let mut file = opts
+        .open(&tmp_path)
+        .await
+        .map_err(io("create temp archive"))?;
 
     let write_result = async {
         file.write_all(bytes).await?;
@@ -74,7 +83,9 @@ pub async fn write_archive_atomic(dir: &Path, stem: &str, bytes: &[u8]) -> Resul
 /// Confines a restore input to `base` (after canonicalization, so `..` and symlinks cannot escape),
 /// requires the `.ombackup` extension and enforces [`MAX_ARCHIVE_BYTES`].
 pub async fn resolve_restore_path(base: &Path, candidate: &Path) -> Result<PathBuf, PalError> {
-    let base = fs::canonicalize(base).await.map_err(io("backup base dir"))?;
+    let base = fs::canonicalize(base)
+        .await
+        .map_err(io("backup base dir"))?;
     let resolved = fs::canonicalize(candidate)
         .await
         .map_err(io("backup path"))?;
@@ -86,7 +97,10 @@ pub async fn resolve_restore_path(base: &Path, candidate: &Path) -> Result<PathB
         ));
     }
 
-    let len = fs::metadata(&resolved).await.map_err(io("stat backup"))?.len();
+    let len = fs::metadata(&resolved)
+        .await
+        .map_err(io("stat backup"))?
+        .len();
     if len > MAX_ARCHIVE_BYTES {
         return Err(PalError::UnsupportedState(
             "Backup file exceeds the maximum supported size".to_string(),

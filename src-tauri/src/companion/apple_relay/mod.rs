@@ -12,11 +12,11 @@ const ALLOWED_PROGRAMS: [&str; 4] = [
 /// Validates Apple UDID format (alphanumeric and dash only) to prevent argument/path abuse.
 pub fn validate_udid(udid: &str) -> Result<&str, PalError> {
     if udid.is_empty() || udid.len() > 64 {
-        return Err(PalError::Transport("Invalid or empty Apple UDID".to_string()));
+        return Err(PalError::Transport(
+            "Invalid or empty Apple UDID".to_string(),
+        ));
     }
-    let valid = udid
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-');
+    let valid = udid.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
     if !valid {
         return Err(PalError::Transport(
             "Apple UDID contains disallowed characters".to_string(),

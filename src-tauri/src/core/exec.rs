@@ -19,7 +19,11 @@ pub struct ExecOutput {
 ///
 /// * `timeout`: a hung tool (e.g. `fastboot` waiting for a device) can no longer block forever.
 /// * `kill_on_drop`: when the timeout drops the future, the child process is killed (no orphans).
-pub async fn exec_raw(program: &str, args: &[&str], limit: Duration) -> Result<ExecOutput, PalError> {
+pub async fn exec_raw(
+    program: &str,
+    args: &[&str],
+    limit: Duration,
+) -> Result<ExecOutput, PalError> {
     let mut cmd = Command::new(program);
     cmd.args(args).kill_on_drop(true);
 

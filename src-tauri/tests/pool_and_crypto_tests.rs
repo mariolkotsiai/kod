@@ -3,7 +3,9 @@ use omnimobile_toolkit::companion::apple_relay::validate_udid;
 use omnimobile_toolkit::core::archive_io::{
     read_and_verify_archive, resolve_restore_path, sanitize_component, write_archive_atomic,
 };
-use omnimobile_toolkit::core::crypto::{decrypt_payload, encrypt_payload, ArchiveMeta, CryptoError};
+use omnimobile_toolkit::core::crypto::{
+    decrypt_payload, encrypt_payload, ArchiveMeta, CryptoError,
+};
 use omnimobile_toolkit::core::device_pool::{DevicePool, PoolError};
 use omnimobile_toolkit::core::pal::{
     find_plist_u64, find_u64, find_value, BackupMode, BackupResult, BatteryTelemetry, DeviceSlot,
@@ -198,7 +200,10 @@ async fn device_pool_enforces_two_slots_max() {
     assert_eq!(s0, DeviceSlot::Slot0);
     assert_eq!(s1, DeviceSlot::Slot1);
 
-    let err = pool.attach_device(d2).await.expect_err("third device must fail");
+    let err = pool
+        .attach_device(d2)
+        .await
+        .expect_err("third device must fail");
     assert!(matches!(err, PoolError::PoolFull));
 }
 
@@ -213,7 +218,10 @@ async fn device_pool_honors_declared_slot_and_rejects_duplicates() {
         .attach_device(mock("android-002", DeviceSlot::Slot1, Platform::Android))
         .await
         .expect_err("slot 1 is taken");
-    assert!(matches!(occupied, PoolError::SlotOccupied(DeviceSlot::Slot1)));
+    assert!(matches!(
+        occupied,
+        PoolError::SlotOccupied(DeviceSlot::Slot1)
+    ));
 
     let duplicate = pool
         .attach_device(mock("android-001", DeviceSlot::Slot0, Platform::Android))
@@ -231,7 +239,10 @@ async fn device_pool_honors_declared_slot_and_rejects_duplicates() {
 #[test]
 fn serial_and_udid_validators_reject_injection_shapes() {
     for bad in ["", "a b", "a;b", "a$(id)", "a|b", "../x", "a\nb", "é"] {
-        assert!(validate_serial(bad).is_err(), "serial {bad:?} must be rejected");
+        assert!(
+            validate_serial(bad).is_err(),
+            "serial {bad:?} must be rejected"
+        );
     }
     assert!(validate_serial(&"a".repeat(129)).is_err());
     assert!(validate_serial("192.168.1.5:5555").is_ok());
@@ -288,9 +299,12 @@ async fn archive_io_is_atomic_confined_and_verified() {
         .expect("second write");
     assert_ne!(p1, p2, "a second backup must never overwrite the first");
     assert!(
-        std::fs::read_dir(&base)
-            .expect("read_dir")
-            .all(|e| e.expect("entry").path().extension().and_then(|x| x.to_str()) == Some("ombackup")),
+        std::fs::read_dir(&base).expect("read_dir").all(|e| e
+            .expect("entry")
+            .path()
+            .extension()
+            .and_then(|x| x.to_str())
+            == Some("ombackup")),
         "no temp files may remain"
     );
 
@@ -302,7 +316,11 @@ async fn archive_io_is_atomic_confined_and_verified() {
 
     assert!(resolve_restore_path(&base, &p1).await.is_ok());
     assert!(resolve_restore_path(&base, &outside).await.is_err());
-    assert!(resolve_restore_path(&base, &base.join("../outside.ombackup")).await.is_err());
+    assert!(
+        resolve_restore_path(&base, &base.join("../outside.ombackup"))
+            .await
+            .is_err()
+    );
     assert!(resolve_restore_path(&base, &wrong_ext).await.is_err());
 
     // Verified read: checksum, platform and authentication.
@@ -330,7 +348,9 @@ async fn archive_io_is_atomic_confined_and_verified() {
     // Malformed JSON is a transport-level error, not a panic.
     let garbage = base.join("garbage.ombackup");
     std::fs::write(&garbage, b"{not json").expect("write garbage");
-    assert!(read_and_verify_archive(&garbage, "android", PASS, None).await.is_err());
+    assert!(read_and_verify_archive(&garbage, "android", PASS, None)
+        .await
+        .is_err());
 }
 
 // ---------------------------------------------------------------- subprocess runner

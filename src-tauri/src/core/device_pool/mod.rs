@@ -137,7 +137,10 @@ impl DevicePool {
 
     /// Attaches a device into the slot it was constructed for, so the slot recorded inside the
     /// device (used in reports) always matches the slot it occupies.
-    pub async fn attach_device(&self, device: Arc<dyn MobileDevice>) -> Result<DeviceSlot, PoolError> {
+    pub async fn attach_device(
+        &self,
+        device: Arc<dyn MobileDevice>,
+    ) -> Result<DeviceSlot, PoolError> {
         let mut guard = self.slots.write().await;
         let new_id = device.device_id().to_string();
 

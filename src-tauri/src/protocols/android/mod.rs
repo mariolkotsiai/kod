@@ -4,8 +4,7 @@ use crate::core::archive_io::{read_and_verify_archive, sanitize_component, write
 use crate::core::crypto::{compute_sha256, encrypt_payload, ArchiveMeta};
 use crate::core::pal::{
     find_value, BackupMode, BackupResult, BatteryTelemetry, DeviceSlot, DiagnosticsReport,
-    MobileDevice, PalError, Platform, RestoreMode, RestoreResult, StorageBreakdown,
-    ThermalReading,
+    MobileDevice, PalError, Platform, RestoreMode, RestoreResult, StorageBreakdown, ThermalReading,
 };
 use async_trait::async_trait;
 use executor::{run_adb, run_adb_timeout, verify_adb_host_trust};
@@ -51,9 +50,10 @@ impl AndroidDevice {
     pub async fn install_companion(&self) -> Result<(), PalError> {
         verify_adb_host_trust(&self.serial).await?;
 
-        let apk = self.apk_path.as_ref().ok_or_else(|| {
-            PalError::UnsupportedState("No companion APK configured".to_string())
-        })?;
+        let apk = self
+            .apk_path
+            .as_ref()
+            .ok_or_else(|| PalError::UnsupportedState("No companion APK configured".to_string()))?;
         let expected_sha256 = EXPECTED_APK_SHA256.ok_or_else(|| {
             PalError::UntrustedPeer(
                 "No pinned companion APK digest configured; refusing to sideload".to_string(),

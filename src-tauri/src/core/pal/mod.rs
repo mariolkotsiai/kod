@@ -153,7 +153,10 @@ pub fn find_plist_u64(raw: &str, key: &str) -> Option<u64> {
     let after_key = &raw[raw.find(&marker)? + marker.len()..];
     // The value element must directly follow the key (only whitespace in between).
     let value = after_key.trim_start().strip_prefix("<integer>")?;
-    value[..value.find("</integer>")?].trim().parse::<u64>().ok()
+    value[..value.find("</integer>")?]
+        .trim()
+        .parse::<u64>()
+        .ok()
 }
 
 #[async_trait]

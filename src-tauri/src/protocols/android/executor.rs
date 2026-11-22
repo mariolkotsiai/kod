@@ -10,7 +10,9 @@ const ADB_DEVICES_TIMEOUT: Duration = Duration::from_secs(10);
 /// name without `archive_io::sanitize_component`.)
 pub fn validate_serial(serial: &str) -> Result<&str, PalError> {
     if serial.is_empty() || serial.len() > 128 {
-        return Err(PalError::Transport("Invalid or empty device serial".to_string()));
+        return Err(PalError::Transport(
+            "Invalid or empty device serial".to_string(),
+        ));
     }
     let valid = serial
         .chars()

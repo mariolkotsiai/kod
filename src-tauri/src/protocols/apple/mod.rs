@@ -68,16 +68,12 @@ impl AppleDevice {
 
     /// Best-effort storage figures from the `com.apple.disk_usage` lockdown domain.
     async fn read_storage(&self) -> Option<StorageBreakdown> {
-        let raw = run_imobile_cmd(
-            "ideviceinfo",
-            &self.udid,
-            &["-q", "com.apple.disk_usage"],
-        )
-        .await
-        .ok()?;
+        let raw = run_imobile_cmd("ideviceinfo", &self.udid, &["-q", "com.apple.disk_usage"])
+            .await
+            .ok()?;
 
-        let total = find_u64(&raw, "TotalDiskCapacity")
-            .or_else(|| find_u64(&raw, "TotalDataCapacity"))?;
+        let total =
+            find_u64(&raw, "TotalDiskCapacity").or_else(|| find_u64(&raw, "TotalDataCapacity"))?;
         let available = find_u64(&raw, "TotalDataAvailable")?;
 
         Some(StorageBreakdown {
@@ -133,11 +129,9 @@ impl MobileDevice for AppleDevice {
 
         let mode_label = mode.as_str();
         let raw_payload = Zeroizing::new(match mode {
-            BackupMode::Selective => {
-                run_imobile_cmd("ideviceinfo", &self.udid, &["-s"])
-                    .await?
-                    .into_bytes()
-            }
+            BackupMode::Selective => run_imobile_cmd("ideviceinfo", &self.udid, &["-s"])
+                .await?
+                .into_bytes(),
             BackupMode::FullData | BackupMode::FullImage => {
                 return Err(PalError::UnsupportedState(format!(
                     "Backup mode '{mode_label}' is not implemented for Apple devices"
