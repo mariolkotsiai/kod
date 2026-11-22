@@ -34,6 +34,22 @@
 - The companion APK is only sideloaded when its SHA-256 matches `EXPECTED_APK_SHA256`
   (empty by default, i.e. sideloading is refused).
 
+## Known Dependency Advisories
+Status as of 2026-11-22 (`cargo audit` 0.22.2, RustSec database of 1560 advisories): **0 vulnerabilities**
+and 6 informational warnings. CI runs `cargo audit` and reports them without failing the build; they are
+listed here instead of being silently ignored.
+
+| Crate | Advisory | Kind | Pulled in by | Status |
+| --- | --- | --- | --- | --- |
+| `chrono` 0.4.45 | RUSTSEC-2026-0543 | unmaintained | direct dependency | Used in two places (backup file name timestamp, archive header `created_at`). The advisory suggests `jiff` or `time`. Candidate for replacement. |
+| `lru` 0.12.5 | RUSTSEC-2026-0002 | unsound (`IterMut::next` / `next_back`) | `ratatui` 0.27 (TUI only) | Fixed in `lru` >= 0.16.3. Whether ratatui calls `IterMut` is not verified. Depends on a ratatui release that uses a patched `lru`. |
+| `lru` 0.12.5 | RUSTSEC-2026-0253 | unsound (`LruCache::pop` panic safety) | `ratatui` 0.27 (TUI only) | Fixed in `lru` >= 0.18.2. Exploitation needs unwinding panics, `catch_unwind` and keys with a panicking `Drop`. Depends on a ratatui release that uses a patched `lru`. |
+| `paste` 1.0.15 | RUSTSEC-2024-0436 | unmaintained | `ratatui` 0.27 | Proc-macro: runs at compile time only. |
+| `glib` 0.18.5 | RUSTSEC-2024-0429 | unsound (`VariantStrIter`) | Tauri's GTK3 backend (`gtk`, `webkit2gtk`, `wry`, `tao`) | Fixed in `glib` >= 0.20.0, which Tauri 2.12.7 does not use. Not under this project's control. |
+| `proc-macro-error` 1.0.4 | RUSTSEC-2024-0370 | unmaintained | `glib-macros`, `gtk3-macros` (Tauri's GTK3 backend) | Proc-macro: runs at compile time only. Not under this project's control. |
+
+The GTK3 stack is Tauri's Linux backend.
+
 ## Reporting a Vulnerability
 Do **NOT** open public GitHub issues for security vulnerabilities.
 1. Use GitHub's **Private Vulnerability Reporting** ("Security" tab -> "Report a vulnerability").
