@@ -48,23 +48,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Pull requests: scan only what the PR adds.
-      - name: Run TruffleHog OSS (pull request diff)
-        if: github.event_name == 'pull_request'
+      # The action picks the commit range from the event itself:
+      #   pull_request:                 PR base SHA .. PR head SHA
+      #   push:                         previous main tip .. pushed tip
+      #   workflow_dispatch / schedule: no range, so the whole history is scanned.
+      # Do not set base/head: explicit inputs override that logic. With base "main" and
+      # head "HEAD" the PR scan reported 0 chunks / 0 bytes.
+      - name: Run TruffleHog OSS
         # Pinned commit SHA for trufflesecurity/trufflehog v3.100.0 (verified with git ls-remote)
-        uses: trufflesecurity/trufflehog@d232362a64a09a9e7d58267b8f5acef00ae90e23
-        with:
-          path: ./
-          base: ${{ github.event.repository.default_branch }}
-          head: HEAD
-          version: ${{ env.TRUFFLEHOG_VERSION }}
-          extra_args: --only-verified
-
-      # push to main: the action scans only the commits of that push (from the previous main tip).
-      # workflow_dispatch / schedule: the action leaves BASE and HEAD empty and scans the whole history.
-      - name: Run TruffleHog OSS (push range, full history on schedule/manual)
-        if: github.event_name != 'pull_request'
-        # Pinned commit SHA for trufflesecurity/trufflehog v3.100.0 (same as above)
         uses: trufflesecurity/trufflehog@d232362a64a09a9e7d58267b8f5acef00ae90e23
         with:
           path: ./
