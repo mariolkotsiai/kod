@@ -53,6 +53,4 @@ The GTK3 stack is Tauri's Linux backend.
 ## Reporting a Vulnerability
 Do **NOT** open public GitHub issues for security vulnerabilities.
 1. Use GitHub's **Private Vulnerability Reporting** ("Security" tab -> "Report a vulnerability").
-2. Alternatively, email `security@omnimobile-toolkit.org`. Encrypted reports are accepted once a
-   PGP key fingerprint is published here (TODO before the first release).
-3. Expect an initial acknowledgment within 48 hours and a remediation timeline within 7 days.
+2. Expect an initial acknowledgment within 48 hours and a remediation timeline within 7 days.
