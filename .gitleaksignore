@@ -1,0 +1,6 @@
+# Gitleaks false positives, one fingerprint per line: commit:file:rule-id:start-line
+# Only the exact historical finding is ignored; new findings are still reported.
+
+# Literal test passphrase in the crypto round-trip unit test, not a credential.
+# Found by the first full-history scan (manual run #14, 2026-11-23).
+ebeb55d63e7605cfa7f4df63c36309a602da9055:src-tauri/tests/pool_and_crypto_tests.rs:generic-api-key:82
