@@ -1,13 +1,20 @@
 use crate::companion::apple_relay::{run_imobile_cmd, verify_lockdownd_pairing};
-use crate::core::crypto::{compute_sha256, decrypt_payload, encrypt_payload, EncryptedArchive};
+use crate::core::archive_io::{read_and_verify_archive, sanitize_component, write_archive_atomic};
+use crate::core::crypto::{compute_sha256, encrypt_payload, ArchiveMeta};
 use crate::core::pal::{
-    BackupMode, BackupResult, BatteryTelemetry, DeviceSlot, DiagnosticsReport,
-    DigitizerMatrixResult, MobileDevice, PalError, Platform, RestoreMode, RestoreResult,
-    SensorCheckResult, StorageBreakdown, ThermalReading,
+    find_plist_u64, find_u64, find_value, BackupMode, BackupResult, BatteryTelemetry, DeviceSlot,
+    DiagnosticsReport, MobileDevice, PalError, Platform, RestoreMode, RestoreResult,
+    StorageBreakdown,
 };
 use async_trait::async_trait;
-use std::path::PathBuf;
-use tokio::fs;
+use std::path::{Path, PathBuf};
+use zeroize::Zeroizing;
+
+/// `idevicediagnostics` prints XML plist; `ideviceinfo` prints `key: value` lines.
+/// Try the plist form first, then the line form, so either output shape works.
+fn gauge_u64(raw: &str, key: &str) -> Option<u64> {
+    find_plist_u64(raw, key).or_else(|| find_u64(raw, key))
+}
 
 pub struct AppleDevice {
     udid: String,
@@ -19,46 +26,62 @@ impl AppleDevice {
         Self { udid, slot }
     }
 
-    async fn query_battery_and_thermals(&self) -> Result<(BatteryTelemetry, Vec<ThermalReading>), PalError> {
-        verify_lockdownd_pairing(&self.udid).await?;
+    /// Best-effort battery data; anything the device does not report stays `None`.
+    async fn read_battery(&self) -> BatteryTelemetry {
+        let battery_raw = run_imobile_cmd(
+            "ideviceinfo",
+            &self.udid,
+            &["-q", "com.apple.mobile.battery"],
+        )
+        .await
+        .unwrap_or_default();
+        let gauge_raw = run_imobile_cmd(
+            "idevicediagnostics",
+            &self.udid,
+            &["diagnostics", "GasGauge"],
+        )
+        .await
+        .unwrap_or_default();
 
-        let batt_info = run_imobile_cmd("ideviceinfo", &self.udid, &["-q", "com.apple.mobile.battery"])
-            .await
-            .unwrap_or_default();
-
-        let mut health_percent: u8 = 100;
-        let mut cycle_count: u32 = 0;
-
-        for line in batt_info.lines() {
-            if let Some(rest) = line.strip_prefix("BatteryCurrentCapacity:") {
-                if let Ok(v) = rest.trim().parse::<u8>() {
-                    health_percent = v.min(100);
-                }
-            } else if let Some(rest) = line.strip_prefix("CycleCount:") {
-                if let Ok(v) = rest.trim().parse::<u32>() {
-                    cycle_count = v;
-                }
+        // "BatteryCurrentCapacity" is the charge level, not battery health.
+        let level_percent = find_value(&battery_raw, "BatteryCurrentCapacity")
+            .and_then(|v| v.parse::<u8>().ok())
+            .map(|v| v.min(100));
+        let cycle_count = gauge_u64(&gauge_raw, "CycleCount").and_then(|v| u32::try_from(v).ok());
+        let health_percent = match (
+            gauge_u64(&gauge_raw, "NominalChargeCapacity"),
+            gauge_u64(&gauge_raw, "DesignCapacity"),
+        ) {
+            (Some(nominal), Some(design)) if design > 0 => {
+                u8::try_from((nominal.saturating_mul(100) / design).min(100)).ok()
             }
+            _ => None,
+        };
+
+        BatteryTelemetry {
+            level_percent,
+            health_percent,
+            cycle_count,
+            temperature_celsius: None,
         }
+    }
 
-        // Query diagnostics_relay via idevicediagnostics without requiring persistent jailbreak.
-        let _diag_out = run_imobile_cmd("idevicediagnostics", &self.udid, &["diagnostics", "GasGauge"])
+    /// Best-effort storage figures from the `com.apple.disk_usage` lockdown domain.
+    async fn read_storage(&self) -> Option<StorageBreakdown> {
+        let raw = run_imobile_cmd("ideviceinfo", &self.udid, &["-q", "com.apple.disk_usage"])
             .await
-            .unwrap_or_default();
+            .ok()?;
 
-        let thermals = vec![ThermalReading {
-            zone: "apple-soctherm".to_string(),
-            celsius: 34.0,
-        }];
+        let total =
+            find_u64(&raw, "TotalDiskCapacity").or_else(|| find_u64(&raw, "TotalDataCapacity"))?;
+        let available = find_u64(&raw, "TotalDataAvailable")?;
 
-        Ok((
-            BatteryTelemetry {
-                health_percent,
-                cycle_count,
-                temperature_celsius: 32.5,
-            },
-            thermals,
-        ))
+        Some(StorageBreakdown {
+            total_bytes: total,
+            // Approximation: everything that is not available user-data space counts as used.
+            used_bytes: total.saturating_sub(available),
+            system_bytes: find_u64(&raw, "TotalSystemCapacity"),
+        })
     }
 }
 
@@ -77,69 +100,64 @@ impl MobileDevice for AppleDevice {
     }
 
     async fn get_diagnostics(&self) -> Result<DiagnosticsReport, PalError> {
-        let (battery, thermals) = self.query_battery_and_thermals().await?;
+        verify_lockdownd_pairing(&self.udid).await?;
 
+        let battery = self.read_battery().await;
+        let storage = self.read_storage().await;
+
+        // Thermals, sensors and the digitizer matrix are not probed: "not measured",
+        // never fabricated values.
         Ok(DiagnosticsReport {
             device_id: self.udid.clone(),
             slot: self.slot,
             platform: Platform::Apple,
-            thermals,
+            thermals: Vec::new(),
             battery,
-            storage: StorageBreakdown {
-                total_bytes: 256_000_000_000,
-                used_bytes: 110_000_000_000,
-                system_bytes: 22_000_000_000,
-            },
-            sensors: vec![SensorCheckResult {
-                sensor_name: "coremotion-imu".to_string(),
-                operational: true,
-                detail: "lockdownd/diagnostics_relay verified".to_string(),
-            }],
-            digitizer: DigitizerMatrixResult {
-                rows: 26,
-                cols: 12,
-                dead_zones_detected: 0,
-                passed: true,
-            },
+            storage,
+            sensors: Vec::new(),
+            digitizer: None,
         })
     }
 
-    async fn backup(&self, mode: BackupMode, passphrase: &str) -> Result<BackupResult, PalError> {
+    async fn backup(
+        &self,
+        mode: BackupMode,
+        passphrase: &str,
+        out_dir: &Path,
+    ) -> Result<BackupResult, PalError> {
         verify_lockdownd_pairing(&self.udid).await?;
 
-        let raw_payload = match mode {
-            BackupMode::Selective => {
-                let info = run_imobile_cmd("ideviceinfo", &self.udid, &["-s"]).await?;
-                info.into_bytes()
-            }
+        let mode_label = mode.as_str();
+        let raw_payload = Zeroizing::new(match mode {
+            BackupMode::Selective => run_imobile_cmd("ideviceinfo", &self.udid, &["-s"])
+                .await?
+                .into_bytes(),
             BackupMode::FullData | BackupMode::FullImage => {
-                // Uses idevicebackup2 with validated UDID; FullImage falls back to DFU/backup2 metadata.
-                let out = run_imobile_cmd("idevicebackup2", &self.udid, &["info", "."])
-                    .await
-                    .unwrap_or_else(|_| format!("apple-backup-manifest:{}", self.udid));
-                out.into_bytes()
+                return Err(PalError::UnsupportedState(format!(
+                    "Backup mode '{mode_label}' is not implemented for Apple devices"
+                )));
             }
-        };
+        });
 
-        let encrypted_archive = encrypt_payload(&raw_payload, passphrase)?;
-        let serialized = serde_json::to_vec_pretty(&encrypted_archive)
+        let meta = ArchiveMeta {
+            device_id: &self.udid,
+            platform: Platform::Apple.as_str(),
+            mode: mode_label,
+        };
+        let archive = encrypt_payload(&raw_payload, passphrase, &meta)?;
+        let serialized = serde_json::to_vec_pretty(&archive)
             .map_err(|e| PalError::Transport(format!("Archive serialization failed: {e}")))?;
 
-        let out_dir = PathBuf::from("backups");
-        fs::create_dir_all(&out_dir)
-            .await
-            .map_err(|e| PalError::Transport(format!("Failed creating backup dir: {e}")))?;
+        let stem = format!(
+            "apple_{}_slot{}",
+            sanitize_component(&self.udid),
+            self.slot as u8
+        );
+        let archive_path = write_archive_atomic(out_dir, &stem, &serialized).await?;
 
-        let filename = format!("apple_{}_{}.ombackup", self.udid, self.slot as u8);
-        let archive_path = out_dir.join(filename);
-        fs::write(&archive_path, &serialized)
-            .await
-            .map_err(|e| PalError::Transport(format!("Failed writing backup archive: {e}")))?;
-
-        let sha256_hex = compute_sha256(&serialized);
         Ok(BackupResult {
             archive_path,
-            sha256_hex,
+            sha256_hex: compute_sha256(&serialized),
             size_bytes: serialized.len() as u64,
             encrypted: true,
         })
@@ -150,24 +168,23 @@ impl MobileDevice for AppleDevice {
         backup_path: PathBuf,
         _mode: RestoreMode,
         passphrase: &str,
+        expected_sha256: Option<&str>,
     ) -> Result<RestoreResult, PalError> {
         verify_lockdownd_pairing(&self.udid).await?;
 
-        let raw_file = fs::read(&backup_path)
-            .await
-            .map_err(|e| PalError::Transport(format!("Failed reading backup file: {e}")))?;
+        // Verifies SHA-256 (if provided), platform and AEAD authentication; the decrypted
+        // buffer is zeroized when it goes out of scope.
+        let _verified = read_and_verify_archive(
+            &backup_path,
+            Platform::Apple.as_str(),
+            passphrase,
+            expected_sha256,
+        )
+        .await?;
 
-        let verified_sha256 = compute_sha256(&raw_file);
-        let archive: EncryptedArchive = serde_json::from_slice(&raw_file)
-            .map_err(|e| PalError::Transport(format!("Invalid archive JSON: {e}")))?;
-
-        let mut decrypted = decrypt_payload(&archive, passphrase)?;
-        // Scrub plaintext from memory right after cryptographic & integrity verification.
-        decrypted.clear();
-
-        Ok(RestoreResult {
-            verified_sha256,
-            restored_items: 1,
-        })
+        Err(PalError::UnsupportedState(
+            "Restore to the device is not implemented yet; archive integrity and passphrase were verified"
+                .to_string(),
+        ))
     }
 }

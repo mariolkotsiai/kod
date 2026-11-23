@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # Pinned tool version. Verify/bump on crates.io; never install an unpinned latest in CI.
+  CARGO_AUDIT_VERSION: "0.22.2"
+
 jobs:
   secret-scanning:
     name: Secret Scanning (Gitleaks & TruffleHog)
@@ -20,20 +24,32 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Run Gitleaks
-        # Pinned commit SHA for gitleaks/gitleaks-action v2.3.8
-        uses: gitleaks/gitleaks-action@ffcaaf01bd346b8b062bb90f988c0f0e58a829ff
+        # Pinned commit SHA for gitleaks/gitleaks-action v2.3.9 (verified with git ls-remote)
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run TruffleHog OSS
-        # Pinned commit SHA for trufflesecurity/trufflehog v3.82.6
-        uses: trufflesecurity/trufflehog@3804e4f429be5753d7b3879893da7f2d0f6a0f75
+      # Pull requests: scan only what the PR adds.
+      - name: Run TruffleHog OSS (pull request diff)
+        if: github.event_name == 'pull_request'
+        # Pinned commit SHA for trufflesecurity/trufflehog v3.100.0 (verified with git ls-remote)
+        uses: trufflesecurity/trufflehog@d232362a64a09a9e7d58267b8f5acef00ae90e23
         with:
           path: ./
           base: ${{ github.event.repository.default_branch }}
           head: HEAD
+          extra_args: --only-verified
+
+      # Pushes to main: base == head would make the diff scan fail, so scan the full history.
+      - name: Run TruffleHog OSS (full history)
+        if: github.event_name != 'pull_request'
+        # Pinned commit SHA for trufflesecurity/trufflehog v3.100.0 (same as above)
+        uses: trufflesecurity/trufflehog@d232362a64a09a9e7d58267b8f5acef00ae90e23
+        with:
+          path: ./
           extra_args: --only-verified
 
   dependency-audit:
@@ -42,11 +58,19 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      # cargo audit and npm audit need committed lockfiles: src-tauri/Cargo.lock and package-lock.json.
+      - name: Require lockfiles
+        run: |
+          test -f src-tauri/Cargo.lock || { echo "src-tauri/Cargo.lock is missing"; exit 1; }
+          test -f package-lock.json || { echo "package-lock.json is missing"; exit 1; }
 
       - name: Install Rust toolchain & cargo-audit
         run: |
           rustup toolchain install stable --profile minimal
-          cargo install cargo-audit --locked
+          cargo install cargo-audit --locked --version "${CARGO_AUDIT_VERSION}"
 
       - name: Run cargo audit
         working-directory: src-tauri
@@ -56,7 +80,7 @@ jobs:
         # Pinned commit SHA for actions/setup-node v4.1.0
         uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
         with:
-          node-version: "20"
+          node-version: "24"
 
       - name: Run npm audit
         run: npm audit --audit-level=high

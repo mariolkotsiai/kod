@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-run-restore"
+description = "Enables the run_restore command without any pre-configured scope."
+commands.allow = ["run_restore"]
+
+[[permission]]
+identifier = "deny-run-restore"
+description = "Denies the run_restore command without any pre-configured scope."
+commands.deny = ["run_restore"]

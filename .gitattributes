@@ -1,0 +1,6 @@
+# LF στο repo ΚΑΙ στο working tree. Ο tauri-build γράφει LF· με CRLF checkout (core.autocrlf=true)
+# κάθε build ξαναγράφει tracked αρχεία και το "working tree must be clean" αποτυγχάνει.
+* text=auto eol=lf
+# Τα batch αρχεία των Windows θέλουν CRLF (σχετικό για scripts του Phase 2)
+*.bat text eol=crlf
+*.cmd text eol=crlf
