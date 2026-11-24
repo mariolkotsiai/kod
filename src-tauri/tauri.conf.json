@@ -12,5 +12,18 @@
       "freezePrototype": true
     }
   },
-  "bundle": { "active": false, "publisher": "mariol kotsiai" }
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "mariol kotsiai",
+    "licenseFile": "../LICENSE",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true },
+      "nsis": {
+        "installMode": "both",
+        "languages": ["English"]
+      }
+    }
+  }
 }
