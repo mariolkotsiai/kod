@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "OmniMobile Toolkit",
   "version": "0.1.0",
-  "identifier": "org.omnimobile.toolkit",
+  "identifier": "io.github.mariolkotsiai.omnimobile-toolkit",
   "build": { "frontendDist": "../dist", "devUrl": "http://localhost:1420",
              "beforeDevCommand": "npm run dev", "beforeBuildCommand": "npm run build" },
   "app": {
@@ -12,5 +12,5 @@
       "freezePrototype": true
     }
   },
-  "bundle": { "active": false }
+  "bundle": { "active": false, "publisher": "mariol kotsiai" }
 }

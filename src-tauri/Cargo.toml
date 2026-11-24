@@ -1,8 +1,8 @@
 [package]
 name = "omnimobile-toolkit"
 version = "0.1.0"
-description = "Dual-device mobile diagnostics, backup, and forensics toolkit"
-authors = ["OmniMobile Security Team"]
+description = "Encrypted, cable-only phone backup and phone-to-phone transfer for Android and iPhone, without the cloud"
+authors = ["mariol kotsiai"]
 license = "Apache-2.0"
 edition = "2021"
 rust-version = "1.78"
