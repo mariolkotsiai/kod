@@ -63,7 +63,7 @@ You may only use KOD on devices you own or are authorized to manage.
 | Safe execution of `adb` / libimobiledevice tools (no shell, allowlist, timeouts) | Implemented and tested |
 | Connecting a phone from the app | **Not yet** |
 | Backup, transfer, restore with a real phone | **Not yet** |
-| Windows installer | In progress |
+| Windows installer (not code-signed yet) | Built automatically for each release, see [Installing KOD](#installing-kod) |
 
 ## Requirements
 
@@ -100,17 +100,36 @@ You can turn USB debugging off again when you are done.
 3. **libimobiledevice tools:** there are no official Windows builds yet. How KOD will provide
    them is still being decided. Until then, iPhone support on Windows is not available.
 
-### Verifying a download of KOD
+## Installing KOD
 
-Download releases only from this repository's
-[Releases page](https://github.com/mariolkotsiai/kod/releases). Each release will include
-a `SHA256SUMS` file and an SBOM. Check the installer before running it:
+1. Open this repository's [Releases page](https://github.com/mariolkotsiai/kod/releases). Download
+   KOD only from there.
+2. From the release, download the installer `KOD_<version>_x64-setup.exe` and the `SHA256SUMS` file
+   into the same folder.
+3. Check the installer before running it. Open PowerShell in that folder and run the commands below,
+   with the file name you downloaded:
 
-```powershell
-Get-FileHash .\<installer-file>.exe -Algorithm SHA256
-```
+   ```powershell
+   $name = "KOD_0.1.0_x64-setup.exe"
+   # The line for this file in SHA256SUMS starts with its SHA-256 hash
+   $expected = ((Get-Content .\SHA256SUMS) -match [regex]::Escape($name)) -split '\s+' | Select-Object -First 1
+   # True = the file matches the hash published with the release
+   (Get-FileHash ".\$name" -Algorithm SHA256).Hash -eq $expected
+   ```
 
-The hash must match the line for that file in `SHA256SUMS`.
+   If it prints `False`, do not run the file. Delete it and download it again from the Releases page.
+4. Run the installer. It is **not code-signed yet**, so Windows SmartScreen may show
+   **"Windows protected your PC"**. Select **More info**, check that **App** shows the file you
+   verified and **Publisher** shows *Unknown publisher*, then select **Run anyway**.
+5. Choose whether to install KOD for your user account only or for all users of the computer.
+   Installing for all users needs administrator rights.
+
+To uninstall, open **Settings > Apps > Installed apps** (Windows 10: **Apps & features**), find
+**Kernel Overview and Diagnostics - KOD** and select **Uninstall**. The uninstaller can also delete
+the app data.
+
+Each release also includes `sbom-cyclonedx.json`: a CycloneDX list (SBOM) of the Rust components the
+app is built from.
 
 ## Things to know
 
