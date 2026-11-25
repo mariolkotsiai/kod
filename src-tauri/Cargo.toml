@@ -13,8 +13,9 @@ rust-version = "1.78"
 name = "omnimobile_toolkit"
 path = "src/lib.rs"
 
+# Installed as kod.exe: without `mainBinaryName` in tauri.conf.json the bundle keeps this name.
 [[bin]]
-name = "omnimobile-toolkit-app"
+name = "kod"
 path = "src/main.rs"
 
 [build-dependencies]

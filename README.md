@@ -1,8 +1,12 @@
-# OmniMobile Toolkit
+# Kernel Overview & Diagnostics - KOD
 
 **Back up your phone and move your data from one phone to another, over a USB cable, on your own computer.**
 No cloud account, no app store install, no upload anywhere. Works with Android and iPhone, and with
 two phones connected at the same time.
+
+"Kernel Overview" means reading information from your phone (system version, storage, battery,
+hardware). KOD never modifies the kernel, the bootloader or the system partitions of your phone.
+See [What it will never do](#what-it-will-never-do).
 
 > [!WARNING]
 > **Pre-release (0.1.x). Not ready for use with real data.**
@@ -14,10 +18,10 @@ two phones connected at the same time.
 
 Moving to a new phone or keeping a copy of your data usually means a cloud account (Google Drive,
 iCloud, OneDrive), an app from the Play Store or App Store, a subscription, or a slow Wi-Fi transfer.
-OmniMobile Toolkit does it locally:
+KOD does it locally:
 
 - **Local-first.** Your data goes from the phone to your computer (or to the second phone) and nowhere
-  else. There is no OmniMobile server.
+  else. There is no KOD server.
 - **Nothing to install from an app store.** The phone only needs the settings that Android and Apple
   already provide for computer access.
 - **Encrypted by default.** Backup archives are encrypted with a passphrase only you know
@@ -49,7 +53,7 @@ Both a desktop window and a keyboard-driven terminal mode (`--tui`) are planned.
 - Upload your data anywhere or require an account.
 - Dump raw disk or partition images.
 
-You may only use OmniMobile Toolkit on devices you own or are authorized to manage.
+You may only use KOD on devices you own or are authorized to manage.
 
 ## What works today
 
@@ -59,7 +63,7 @@ You may only use OmniMobile Toolkit on devices you own or are authorized to mana
 | Safe execution of `adb` / libimobiledevice tools (no shell, allowlist, timeouts) | Implemented and tested |
 | Connecting a phone from the app | **Not yet** |
 | Backup, transfer, restore with a real phone | **Not yet** |
-| Windows installer | In progress |
+| Windows installer (not code-signed yet) | Built automatically for each release, see [Installing KOD](#installing-kod) |
 
 ## Requirements
 
@@ -79,7 +83,7 @@ or re-uploads.
 2. Connect the cable and accept the **"Allow USB debugging?"** prompt on the phone.
 3. **Android SDK Platform-Tools** (`adb`) from Google:
    https://developer.android.com/tools/releases/platform-tools
-   Whether OmniMobile will ship `adb` itself is still being decided. Until then, install it yourself and
+   Whether KOD will ship `adb` itself is still being decided. Until then, install it yourself and
    add it to your `PATH`.
 4. A **USB driver**, only if Windows does not recognize the phone:
    https://developer.android.com/studio/run/oem-usb (links to each manufacturer's official driver).
@@ -90,30 +94,49 @@ You can turn USB debugging off again when you are done.
 
 1. **Apple Devices** app from the Microsoft Store: open the Microsoft Store, search for "Apple Devices",
    select **Get** ([Apple's guide](https://support.apple.com/guide/devices-windows/mchl5ded2763/windows)).
-   Apple's software provides the USB connection to the iPhone on Windows, and OmniMobile cannot ship it.
+   Apple's software provides the USB connection to the iPhone on Windows, and KOD cannot ship it.
    (Exactly which Apple component is needed will be confirmed during device testing.)
 2. Unlock the iPhone, connect the cable and tap **"Trust This Computer"**.
-3. **libimobiledevice tools:** there are no official Windows builds yet. How OmniMobile will provide
+3. **libimobiledevice tools:** there are no official Windows builds yet. How KOD will provide
    them is still being decided. Until then, iPhone support on Windows is not available.
 
-### Verifying a download of OmniMobile Toolkit
+## Installing KOD
 
-Download releases only from this repository's
-[Releases page](https://github.com/mariolkotsiai/omnimobile-toolkit/releases). Each release will include
-a `SHA256SUMS` file and an SBOM. Check the installer before running it:
+1. Open this repository's [Releases page](https://github.com/mariolkotsiai/kod/releases). Download
+   KOD only from there.
+2. From the release, download the installer `KOD_<version>_x64-setup.exe` and the `SHA256SUMS` file
+   into the same folder.
+3. Check the installer before running it. Open PowerShell in that folder and run the commands below,
+   with the file name you downloaded:
 
-```powershell
-Get-FileHash .\<installer-file>.exe -Algorithm SHA256
-```
+   ```powershell
+   $name = "KOD_0.1.0_x64-setup.exe"
+   # The line for this file in SHA256SUMS starts with its SHA-256 hash
+   $expected = ((Get-Content .\SHA256SUMS) -match [regex]::Escape($name)) -split '\s+' | Select-Object -First 1
+   # True = the file matches the hash published with the release
+   (Get-FileHash ".\$name" -Algorithm SHA256).Hash -eq $expected
+   ```
 
-The hash must match the line for that file in `SHA256SUMS`.
+   If it prints `False`, do not run the file. Delete it and download it again from the Releases page.
+4. Run the installer. It is **not code-signed yet**, so Windows SmartScreen may show
+   **"Windows protected your PC"**. Select **More info**, check that **App** shows the file you
+   verified and **Publisher** shows *Unknown publisher*, then select **Run anyway**.
+5. Choose whether to install KOD for your user account only or for all users of the computer.
+   Installing for all users needs administrator rights.
+
+To uninstall, open **Settings > Apps > Installed apps** (Windows 10: **Apps & features**), find
+**Kernel Overview and Diagnostics - KOD** and select **Uninstall**. The uninstaller can also delete
+the app data.
+
+Each release also includes `sbom-cyclonedx.json`: a CycloneDX list (SBOM) of the Rust components the
+app is built from.
 
 ## Things to know
 
 - **Your backup passphrase cannot be recovered.** Without it, the backup cannot be opened by anyone,
   including you.
 - **Older iPhones.** Apple's own Windows backup requires iOS 9 or later
-  ([Apple](https://support.apple.com/en-us/108967)). OmniMobile is not planned or tested for older versions.
+  ([Apple](https://support.apple.com/en-us/108967)). KOD is not planned or tested for older versions.
 - **iPhone photos and iCloud.** If **iCloud Photos** uses **Optimize iPhone Storage**, the full-size
   originals are in iCloud, not on the phone. A cable backup only contains what is on the phone.
 - **Android app data.** Android protects each app's private data. Without root (which this project

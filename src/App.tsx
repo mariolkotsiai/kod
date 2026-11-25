@@ -22,7 +22,7 @@ export default function App() {
     <main className="min-h-screen bg-slate-950 p-6 text-slate-100">
       <div className="mx-auto max-w-4xl space-y-4">
         <header className="flex items-center justify-between">
-          <h1 className="text-lg font-semibold">OmniMobile Toolkit</h1>
+          <h1 className="text-lg font-semibold">Kernel Overview &amp; Diagnostics - KOD</h1>
           <button
             type="button"
             onClick={() => void refreshSlots()}

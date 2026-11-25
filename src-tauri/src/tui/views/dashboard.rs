@@ -20,7 +20,7 @@ pub fn render_dashboard(frame: &mut Frame<'_>, slots: &[SlotStatus]) {
 
     let header = Paragraph::new(Line::from(vec![
         Span::styled(
-            " OmniMobile Toolkit ",
+            " Kernel Overview & Diagnostics - KOD ",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
