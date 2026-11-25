@@ -9,10 +9,7 @@ use omnimobile_toolkit::{start_gui_mode, start_tui_mode};
 use std::sync::Arc;
 
 #[derive(Parser, Debug)]
-#[command(
-    name = "omnimobile-toolkit",
-    about = "Dual-device Android & iOS toolkit"
-)]
+#[command(name = "kod", about = "Dual-device Android & iOS toolkit")]
 struct CliArgs {
     /// Launch the terminal user interface instead of the GUI (debug builds only)
     #[arg(long)]

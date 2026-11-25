@@ -1,12 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "OmniMobile Toolkit",
+  "productName": "Kernel Overview and Diagnostics - KOD",
   "version": "0.1.0",
-  "identifier": "io.github.mariolkotsiai.omnimobile-toolkit",
+  "identifier": "io.github.mariolkotsiai.kod",
   "build": { "frontendDist": "../dist", "devUrl": "http://localhost:1420",
              "beforeDevCommand": "npm run dev", "beforeBuildCommand": "npm run build" },
   "app": {
-    "windows": [{ "label": "main", "title": "OmniMobile Toolkit", "width": 1100, "height": 720 }],
+    "windows": [{ "label": "main", "title": "Kernel Overview & Diagnostics - KOD", "width": 1100, "height": 720 }],
     "security": {
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost",
       "freezePrototype": true
