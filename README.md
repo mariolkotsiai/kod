@@ -72,7 +72,8 @@ or re-uploads.
 
 ### Your computer
 
-- **Windows 10 or 11, 64-bit.** The minimum Windows build will be confirmed with the first installer.
+- **Windows 10 or 11, 64-bit.** The installer has been tested on Windows 11 24H2 (build 26100).
+  Windows 10 and older Windows 11 builds have not been tested yet.
 - **Microsoft Edge WebView2 Runtime.** Already included in Windows 11. If it is missing, the installer
   downloads it from Microsoft, so the first installation needs an internet connection.
 
@@ -125,8 +126,9 @@ You can turn USB debugging off again when you are done.
    Installing for all users needs administrator rights.
 
 To uninstall, open **Settings > Apps > Installed apps** (Windows 10: **Apps & features**), find
-**Kernel Overview and Diagnostics - KOD** and select **Uninstall**. The uninstaller can also delete
-the app data.
+**Kernel Overview and Diagnostics - KOD** and select **Uninstall**. To also delete the app data,
+check **Delete the application data** in the uninstaller (it is not checked by default). If KOD
+was installed for all users, only the data of the user who runs the uninstaller is deleted.
 
 Each release also includes `sbom-cyclonedx.json`: a CycloneDX list (SBOM) of the Rust components the
 app is built from.
